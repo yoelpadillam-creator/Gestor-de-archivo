@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analizador de Facturas vs Inventario — Tauro</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>Analizador de Facturas vs Inventario</h1>
+    <p class="subtitle">
+      Modelo <strong>Tauro</strong> · detecta duplicados y descuadres cruzando facturas escaneadas contra el inventario activo.
+      Todo se procesa en tu navegador; nada sale de esta máquina.
+    </p>
+  </header>
+
+  <main>
+    <!-- PASO 1: INVENTARIO -->
+    <section id="step-inventory" class="card">
+      <h2><span class="step-num">1</span> Cargar inventario activo</h2>
+      <p>Sube un archivo Excel o CSV con columnas <code>modelo</code>, <code>chasis</code>, <code>motor</code>, <code>color</code>.</p>
+      <input type="file" id="inventoryInput" accept=".xlsx,.xls,.csv" />
+      <div id="inventoryStatus" class="status"></div>
+      <div id="inventoryTableWrap" class="table-wrap"></div>
+    </section>
+
+    <!-- PASO 2: FACTURAS -->
+    <section id="step-invoices" class="card">
+      <h2><span class="step-num">2</span> Cargar facturas escaneadas</h2>
+      <p>Selecciona uno o varios PDF escaneados (puedes elegir muchos a la vez).</p>
+      <input type="file" id="invoicesInput" accept="application/pdf" multiple />
+      <ul id="invoicesList" class="invoices-list"></ul>
+    </section>
+
+    <!-- PASO 3: ANALIZAR -->
+    <section id="step-analyze" class="card">
+      <h2><span class="step-num">3</span> Analizar facturas</h2>
+      <p>El OCR puede tardar varios segundos por página. No cierres la pestaña mientras procesa.</p>
+      <button id="analyzeBtn" disabled>Analizar facturas</button>
+      <div id="analyzeProgress" class="progress-wrap" hidden>
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <div id="progressLabel" class="progress-label"></div>
+      </div>
+    </section>
+
+    <!-- PASO 4: INFORME -->
+    <section id="step-report" class="card" hidden>
+      <h2><span class="step-num">4</span> Informe detallado</h2>
+
+      <div id="summary" class="summary-grid"></div>
+
+      <div class="report-block">
+        <h3>A · Facturas duplicadas <span class="hint">(mismo chasis o motor en más de una factura)</span></h3>
+        <div id="tableDuplicates" class="table-wrap"></div>
+      </div>
+
+      <div class="report-block">
+        <h3>B · Tauros facturados que coinciden con inventario</h3>
+        <div id="tableMatches" class="table-wrap"></div>
+      </div>
+
+      <div class="report-block">
+        <h3>C · Facturados que NO están en inventario</h3>
+        <div id="tableMissingInventory" class="table-wrap"></div>
+      </div>
+
+      <div class="report-block">
+        <h3>D · En inventario pero NO facturados</h3>
+        <div id="tableNotInvoiced" class="table-wrap"></div>
+      </div>
+
+      <div class="export-buttons">
+        <button id="exportXlsxBtn">Exportar a Excel</button>
+        <button id="exportPdfBtn">Exportar a PDF</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <small>Procesamiento 100% local · OCR con Tesseract.js · Lectura de PDF con pdf.js</small>
+  </footer>
+
+  <!-- Librerías externas vía CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+  <!-- Módulos de la app -->
+  <script src="js/inventory.js"></script>
+  <script src="js/ocr.js"></script>
+  <script src="js/parser.js"></script>
+  <script src="js/analyzer.js"></script>
+  <script src="js/report.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
