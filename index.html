@@ -36,9 +36,9 @@
     <!-- PASO 2: FIT -->
     <section class="card" id="step-fit">
       <h2><span class="step">2</span>FIT — Orden de pedido <span class="optional">(opcional)</span></h2>
-      <p class="hint">Excel o CSV con <code>chasis</code> y <code>color_esperado</code>. Se usa para validar que el color de cada unidad coincida con lo pedido.</p>
+      <p class="hint">Excel/CSV con <code>chasis</code> + <code>color_esperado</code>, o PDF de la orden de pedido (se extrae con OCR). Sirve para validar que cada chasis tenga el color que se pidió.</p>
       <label class="file-label" for="fitInput">Seleccionar archivo</label>
-      <input type="file" id="fitInput" accept=".xlsx,.xls,.csv" />
+      <input type="file" id="fitInput" accept=".xlsx,.xls,.csv,.pdf" />
       <div id="fitStatus" class="status"></div>
       <div id="fitTableWrap"></div>
     </section>

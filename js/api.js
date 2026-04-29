@@ -3,6 +3,26 @@
 (function (global) {
   "use strict";
 
+  const SERVER_DOWN_MSG =
+    "No se puede conectar con el servidor Python.\n\n" +
+    "Comprueba que:\n" +
+    "  1) El servidor está arrancado: ejecuta «python run.py» en una terminal.\n" +
+    "  2) Estás usando la URL «http://localhost:8000» (no abrir el HTML directamente).";
+
+  async function _fetch(url, options) {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      // 'Failed to fetch' = no se llegó al servidor (no corre o file://).
+      if (err && /failed to fetch|networkerror|load failed/i.test(err.message || "")) {
+        const e = new Error(SERVER_DOWN_MSG);
+        e.cause = err;
+        throw e;
+      }
+      throw err;
+    }
+  }
+
   async function _checkResponse(res) {
     if (!res.ok) {
       const text = await res.text().catch(() => res.statusText);
@@ -11,14 +31,24 @@
     return res;
   }
 
-  // POST /api/ocr — sube PDFs y devuelve entradas de vehículos parseadas.
-  // knownModels: string[] de modelos a buscar (vacío = todos).
+  // POST /api/ocr — sube PDFs de facturas; devuelve entradas parseadas.
   async function ocr(files, modelFilter, knownModels) {
     const form = new FormData();
     files.forEach(f => form.append("files", f));
     form.append("model_filter", modelFilter || "ALL");
     form.append("known_models", JSON.stringify(knownModels || []));
-    const res = await fetch("/api/ocr", { method: "POST", body: form });
+    const res = await _fetch("/api/ocr", { method: "POST", body: form });
+    await _checkResponse(res);
+    return res.json();
+  }
+
+  // POST /api/fit/pdf — sube uno o más PDFs de FIT; devuelve fit_rows.
+  async function fitPdf(files, knownModels) {
+    const form = new FormData();
+    const arr = Array.isArray(files) ? files : [files];
+    arr.forEach(f => form.append("files", f));
+    form.append("known_models", JSON.stringify(knownModels || []));
+    const res = await _fetch("/api/fit/pdf", { method: "POST", body: form });
     await _checkResponse(res);
     return res.json();
   }
@@ -31,7 +61,7 @@
       fit_rows: fitRows || [],
       model_filter: modelFilter || "ALL"
     };
-    const res = await fetch("/api/analyze", {
+    const res = await _fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -40,28 +70,24 @@
     return res.json();
   }
 
-  // POST /api/export/xlsx — descarga informe Excel.
   async function exportXlsx(report) {
-    const res = await fetch("/api/export/xlsx", {
+    const res = await _fetch("/api/export/xlsx", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(report)
     });
     await _checkResponse(res);
-    const blob = await res.blob();
-    _triggerDownload(blob, "informe-facturas.xlsx");
+    _triggerDownload(await res.blob(), "informe-facturas.xlsx");
   }
 
-  // POST /api/export/pdf — descarga informe PDF.
   async function exportPdf(report) {
-    const res = await fetch("/api/export/pdf", {
+    const res = await _fetch("/api/export/pdf", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(report)
     });
     await _checkResponse(res);
-    const blob = await res.blob();
-    _triggerDownload(blob, "informe-facturas.pdf");
+    _triggerDownload(await res.blob(), "informe-facturas.pdf");
   }
 
   function _triggerDownload(blob, filename) {
@@ -74,5 +100,5 @@
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
   }
 
-  global.API = { ocr, analyze, exportXlsx, exportPdf };
+  global.API = { ocr, fitPdf, analyze, exportXlsx, exportPdf };
 })(window);

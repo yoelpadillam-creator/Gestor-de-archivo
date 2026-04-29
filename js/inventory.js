@@ -81,7 +81,15 @@
     return _parseFile(file, INVENTORY_ALIASES, ["modelo", "chasis", "motor", "color"]);
   }
 
-  async function loadFitFile(file) {
+  async function loadFitFile(file, knownModels) {
+    const name = (file.name || "").toLowerCase();
+    if (name.endsWith(".pdf")) {
+      const res = await window.API.fitPdf([file], knownModels || []);
+      if (res.errors && res.errors.length) {
+        throw new Error(res.errors.join(" · "));
+      }
+      return res.fit_rows;
+    }
     return _parseFile(file, FIT_ALIASES, ["chasis", "color_esperado"]);
   }
 

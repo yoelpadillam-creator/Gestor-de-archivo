@@ -117,9 +117,13 @@
   els.fitInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setStatus(els.fitStatus, `Leyendo ${file.name}…`);
+    const isPdf = (file.name || "").toLowerCase().endsWith(".pdf");
+    setStatus(els.fitStatus,
+      isPdf ? `OCR de ${file.name}… (puede tardar varios segundos)`
+            : `Leyendo ${file.name}…`);
     try {
-      state.fit = await window.InventoryModule.loadFitFile(file);
+      const knownModels = window.InventoryModule.uniqueModels(state.inventoryAll);
+      state.fit = await window.InventoryModule.loadFitFile(file, knownModels);
       setStatus(els.fitStatus, `${state.fit.length} filas FIT cargadas.`, "ok");
       renderSimpleTable(
         els.fitTable,
@@ -130,6 +134,7 @@
     } catch (err) {
       setStatus(els.fitStatus, `Error: ${err.message}`, "err");
       state.fit = [];
+      els.fitTable.innerHTML = "";
     }
   });
 
@@ -174,7 +179,8 @@
         }
       });
     } catch (err) {
-      setProgress(0, `Error en OCR: ${err.message}`);
+      setProgress(0, "Error en OCR.");
+      alert(err.message);
       els.analyzeBtn.disabled = false;
       return;
     }
@@ -189,7 +195,8 @@
         state.modelFilter
       );
     } catch (err) {
-      setProgress(80, `Error en análisis: ${err.message}`);
+      setProgress(80, "Error en análisis.");
+      alert(err.message);
       els.analyzeBtn.disabled = false;
       return;
     }

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 
-from .routers import ocr, analyze, export
+from .routers import ocr, analyze, export, fit
 
 app = FastAPI(title="Gestor de Facturas", version="2.0.0")
 
@@ -17,6 +17,7 @@ app.add_middleware(
 app.include_router(ocr.router)
 app.include_router(analyze.router)
 app.include_router(export.router)
+app.include_router(fit.router)
 
 # Sirve el frontend estático desde la raíz del proyecto.
 # Debe montarse DESPUÉS de los routers para que /api/* no sea interceptado.
