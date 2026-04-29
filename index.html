@@ -3,40 +3,59 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Analizador de Facturas vs Inventario — Tauro</title>
+  <title>Gestor de Facturas vs Inventario</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="site-header">
-    <h1>Analizador de Facturas vs Inventario</h1>
-    <p class="subtitle">
-      Modelo <strong>Tauro</strong> · detecta duplicados y descuadres cruzando facturas escaneadas contra el inventario activo.
-      Todo se procesa en tu navegador; nada sale de esta máquina.
-    </p>
+
+  <header>
+    <h1>Gestor de Facturas</h1>
+    <p>Cruza facturas escaneadas contra inventario activo y orden de pedido (FIT). Detecta doble facturación, descuadres y discrepancias de color.</p>
   </header>
 
   <main>
+
     <!-- PASO 1: INVENTARIO -->
-    <section id="step-inventory" class="card">
-      <h2><span class="step-num">1</span> Cargar inventario activo</h2>
-      <p>Sube un archivo Excel o CSV con columnas <code>modelo</code>, <code>chasis</code>, <code>motor</code>, <code>color</code>.</p>
+    <section class="card" id="step-inventory">
+      <h2><span class="step">1</span>Inventario activo</h2>
+      <p class="hint">Excel o CSV con columnas <code>modelo</code>, <code>chasis</code>, <code>motor</code>, <code>color</code>.</p>
+      <label class="file-label" for="inventoryInput">Seleccionar archivo</label>
       <input type="file" id="inventoryInput" accept=".xlsx,.xls,.csv" />
       <div id="inventoryStatus" class="status"></div>
-      <div id="inventoryTableWrap" class="table-wrap"></div>
+
+      <div class="field-row">
+        <label for="modelSelect">Filtrar por modelo:</label>
+        <select id="modelSelect" disabled>
+          <option value="ALL">Carga el inventario primero</option>
+        </select>
+      </div>
+
+      <div id="inventoryTableWrap"></div>
     </section>
 
-    <!-- PASO 2: FACTURAS -->
-    <section id="step-invoices" class="card">
-      <h2><span class="step-num">2</span> Cargar facturas escaneadas</h2>
-      <p>Selecciona uno o varios PDF escaneados (puedes elegir muchos a la vez).</p>
+    <!-- PASO 2: FIT -->
+    <section class="card" id="step-fit">
+      <h2><span class="step">2</span>FIT — Orden de pedido <span class="optional">(opcional)</span></h2>
+      <p class="hint">Excel o CSV con <code>chasis</code> y <code>color_esperado</code>. Se usa para validar que el color de cada unidad coincida con lo pedido.</p>
+      <label class="file-label" for="fitInput">Seleccionar archivo</label>
+      <input type="file" id="fitInput" accept=".xlsx,.xls,.csv" />
+      <div id="fitStatus" class="status"></div>
+      <div id="fitTableWrap"></div>
+    </section>
+
+    <!-- PASO 3: FACTURAS -->
+    <section class="card" id="step-invoices">
+      <h2><span class="step">3</span>Facturas escaneadas</h2>
+      <p class="hint">Selecciona uno o varios PDF (puedes elegir muchos a la vez).</p>
+      <label class="file-label" for="invoicesInput">Seleccionar facturas</label>
       <input type="file" id="invoicesInput" accept="application/pdf" multiple />
-      <ul id="invoicesList" class="invoices-list"></ul>
+      <ul id="invoicesList" class="file-list"></ul>
     </section>
 
-    <!-- PASO 3: ANALIZAR -->
-    <section id="step-analyze" class="card">
-      <h2><span class="step-num">3</span> Analizar facturas</h2>
-      <p>El OCR puede tardar varios segundos por página. No cierres la pestaña mientras procesa.</p>
+    <!-- PASO 4: ANALIZAR -->
+    <section class="card" id="step-analyze">
+      <h2><span class="step">4</span>Analizar</h2>
+      <p class="hint">El servidor procesa las facturas con OCR optimizado. El tiempo depende del número de páginas.</p>
       <button id="analyzeBtn" disabled>Analizar facturas</button>
       <div id="analyzeProgress" class="progress-wrap" hidden>
         <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
@@ -44,59 +63,54 @@
       </div>
     </section>
 
-    <!-- PASO 4: INFORME -->
-    <section id="step-report" class="card" hidden>
-      <h2><span class="step-num">4</span> Informe detallado</h2>
+    <!-- PASO 5: INFORME -->
+    <section class="card" id="step-report" hidden>
+      <h2><span class="step">5</span>Informe detallado</h2>
 
       <div id="summary" class="summary-grid"></div>
 
-      <div class="report-block">
-        <h3>A · Facturas duplicadas <span class="hint">(mismo chasis o motor en más de una factura)</span></h3>
-        <div id="tableDuplicates" class="table-wrap"></div>
+      <div class="report-section">
+        <h3>A · Facturas duplicadas <span class="hint-inline">— mismo chasis o motor en 2+ facturas</span></h3>
+        <div id="tableDuplicates"></div>
       </div>
 
-      <div class="report-block">
-        <h3>B · Tauros facturados que coinciden con inventario</h3>
-        <div id="tableMatches" class="table-wrap"></div>
+      <div class="report-section">
+        <h3>B · Coincidencias con inventario</h3>
+        <div id="tableMatches"></div>
       </div>
 
-      <div class="report-block">
+      <div class="report-section">
         <h3>C · Facturados que NO están en inventario</h3>
-        <div id="tableMissingInventory" class="table-wrap"></div>
+        <div id="tableMissingInventory"></div>
       </div>
 
-      <div class="report-block">
+      <div class="report-section">
         <h3>D · En inventario pero NO facturados</h3>
-        <div id="tableNotInvoiced" class="table-wrap"></div>
+        <div id="tableNotInvoiced"></div>
       </div>
 
-      <div class="export-buttons">
-        <button id="exportXlsxBtn">Exportar a Excel</button>
-        <button id="exportPdfBtn">Exportar a PDF</button>
+      <div class="report-section">
+        <h3>E · Discrepancias de color (FIT vs factura)</h3>
+        <div id="tableFitDiscrepancies"></div>
+      </div>
+
+      <div class="export-row">
+        <button id="exportXlsxBtn">Exportar Excel</button>
+        <button id="exportPdfBtn">Exportar PDF</button>
       </div>
     </section>
+
   </main>
 
   <footer>
-    <small>Procesamiento 100% local · OCR con Tesseract.js · Lectura de PDF con pdf.js</small>
+    <small>OCR procesado en el servidor · Análisis 100% privado · datos no salen de la red local</small>
   </footer>
 
-  <!-- Librerías externas vía CDN -->
+  <!-- SheetJS solo para leer Excel/CSV en cliente -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script>
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
-  <!-- Módulos de la app -->
+  <script src="js/api.js"></script>
   <script src="js/inventory.js"></script>
-  <script src="js/ocr.js"></script>
-  <script src="js/parser.js"></script>
-  <script src="js/analyzer.js"></script>
   <script src="js/report.js"></script>
   <script src="js/app.js"></script>
 </body>

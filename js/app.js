@@ -1,181 +1,226 @@
-// Orquestador: cablea la UI, mantiene estado en memoria y dispara las fases.
+// Orquestador: gestiona estado UI, llama al backend Python y renderiza el informe.
 
 (function () {
   "use strict";
 
   const state = {
-    inventoryAll: [],   // todas las filas del Excel
-    inventoryTauro: [], // solo Tauro
-    invoices: [],       // File[]
-    invoiceEntries: [], // entradas Tauro extraídas
-    report: null
+    inventoryAll:   [],   // todas las filas del Excel inventario
+    inventory:      [],   // filtradas por modelo seleccionado
+    fit:            [],   // filas de la FIT
+    invoices:       [],   // File[] de PDFs
+    invoiceEntries: [],   // entradas devueltas por /api/ocr
+    report:         null,
+    modelFilter:    "ALL"
   };
+
+  // ── Referencias DOM ──────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
 
   const els = {
-    inventoryInput:   document.getElementById("inventoryInput"),
-    inventoryStatus:  document.getElementById("inventoryStatus"),
-    inventoryTable:   document.getElementById("inventoryTableWrap"),
-    invoicesInput:    document.getElementById("invoicesInput"),
-    invoicesList:     document.getElementById("invoicesList"),
-    analyzeBtn:       document.getElementById("analyzeBtn"),
-    analyzeProgress:  document.getElementById("analyzeProgress"),
-    progressFill:     document.getElementById("progressFill"),
-    progressLabel:    document.getElementById("progressLabel"),
-    exportXlsxBtn:    document.getElementById("exportXlsxBtn"),
-    exportPdfBtn:     document.getElementById("exportPdfBtn")
+    inventoryInput:  $("inventoryInput"),
+    inventoryStatus: $("inventoryStatus"),
+    inventoryTable:  $("inventoryTableWrap"),
+    modelSelect:     $("modelSelect"),
+    fitInput:        $("fitInput"),
+    fitStatus:       $("fitStatus"),
+    fitTable:        $("fitTableWrap"),
+    invoicesInput:   $("invoicesInput"),
+    invoicesList:    $("invoicesList"),
+    analyzeBtn:      $("analyzeBtn"),
+    analyzeProgress: $("analyzeProgress"),
+    progressFill:    $("progressFill"),
+    progressLabel:   $("progressLabel"),
+    exportXlsxBtn:   $("exportXlsxBtn"),
+    exportPdfBtn:    $("exportPdfBtn")
   };
 
-  function updateAnalyzeButton() {
-    els.analyzeBtn.disabled =
-      state.inventoryTauro.length === 0 || state.invoices.length === 0;
-  }
-
-  // ---- Paso 1: Inventario -------------------------------------------------
-
-  function renderInventoryTable(rows) {
-    if (!rows.length) {
-      els.inventoryTable.innerHTML =
-        `<div class="empty">No hay filas con modelo "TAURO".</div>`;
-      return;
-    }
-    const headers = ["Modelo", "Chasis", "Motor", "Color"];
-    const body = rows.map(r =>
-      `<tr>
-         <td>${escape(r.modelo)}</td>
-         <td><code>${escape(r.chasis)}</code></td>
-         <td><code>${escape(r.motor)}</code></td>
-         <td>${escape(r.color)}</td>
-       </tr>`
-    ).join("");
-    els.inventoryTable.innerHTML =
-      `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
-       <tbody>${body}</tbody></table>`;
-  }
-
-  function escape(s) {
+  // ── Utilidades UI ────────────────────────────────────────────────────────
+  function esc(s) {
     return String(s ?? "")
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
-  els.inventoryInput.addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    els.inventoryStatus.textContent = `Leyendo ${file.name}…`;
-    els.inventoryStatus.className = "status";
-    try {
-      const rows = await window.InventoryModule.loadInventoryFile(file);
-      state.inventoryAll = rows;
-      state.inventoryTauro = window.InventoryModule.filterTauro(rows);
-      els.inventoryStatus.textContent =
-        `${rows.length} filas leídas · ${state.inventoryTauro.length} Tauro activos.`;
-      els.inventoryStatus.className = "status ok";
-      renderInventoryTable(state.inventoryTauro);
-    } catch (err) {
-      console.error(err);
-      els.inventoryStatus.textContent = `Error: ${err.message}`;
-      els.inventoryStatus.className = "status err";
-      state.inventoryTauro = [];
-      els.inventoryTable.innerHTML = "";
-    }
-    updateAnalyzeButton();
-  });
-
-  // ---- Paso 2: Facturas ---------------------------------------------------
-
-  function renderInvoicesList() {
-    if (!state.invoices.length) {
-      els.invoicesList.innerHTML = "";
-      return;
-    }
-    els.invoicesList.innerHTML = state.invoices.map((f, idx) =>
-      `<li data-idx="${idx}">
-         <span class="fname">${escape(f.name)}</span>
-         <span class="fstatus" data-idx="${idx}">pendiente</span>
-       </li>`
-    ).join("");
+  function setStatus(el, text, cls) {
+    el.textContent = text;
+    el.className = "status" + (cls ? " " + cls : "");
   }
 
-  function setInvoiceStatus(idx, text, cls) {
-    const el = els.invoicesList.querySelector(`.fstatus[data-idx="${idx}"]`);
-    if (el) {
-      el.textContent = text;
-      el.className = `fstatus ${cls || ""}`;
-    }
-  }
-
-  els.invoicesInput.addEventListener("change", (e) => {
-    state.invoices = Array.from(e.target.files || []);
-    renderInvoicesList();
-    updateAnalyzeButton();
-  });
-
-  // ---- Paso 3: Analizar ---------------------------------------------------
-
-  function setProgress(done, total, label) {
+  function setProgress(pct, label) {
     els.analyzeProgress.hidden = false;
-    const pct = total ? Math.round((done / total) * 100) : 0;
-    els.progressFill.style.width = `${pct}%`;
+    els.progressFill.style.width = `${Math.min(100, pct)}%`;
     els.progressLabel.textContent = label;
   }
 
+  function updateAnalyzeBtn() {
+    els.analyzeBtn.disabled =
+      state.inventory.length === 0 || state.invoices.length === 0;
+  }
+
+  // ── Tablas simples ───────────────────────────────────────────────────────
+  function renderSimpleTable(host, headers, rows, empty) {
+    if (!rows.length) {
+      host.innerHTML = `<p class="empty">${esc(empty)}</p>`;
+      return;
+    }
+    const ths = headers.map(h => `<th>${esc(h)}</th>`).join("");
+    const trs = rows.map(r =>
+      `<tr>${r.map(c => `<td>${esc(String(c ?? ""))}</td>`).join("")}</tr>`
+    ).join("");
+    host.innerHTML =
+      `<div class="table-wrap"><table><thead><tr>${ths}</tr></thead>` +
+      `<tbody>${trs}</tbody></table></div>`;
+  }
+
+  // ── PASO 1: Inventario ───────────────────────────────────────────────────
+  els.inventoryInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setStatus(els.inventoryStatus, `Leyendo ${file.name}…`);
+    try {
+      state.inventoryAll = await window.InventoryModule.loadInventoryFile(file);
+      populateModelSelect(window.InventoryModule.uniqueModels(state.inventoryAll));
+      applyModelFilter();
+      setStatus(els.inventoryStatus,
+        `${state.inventoryAll.length} filas leídas · ${state.inventory.length} mostradas.`, "ok");
+    } catch (err) {
+      setStatus(els.inventoryStatus, `Error: ${err.message}`, "err");
+      state.inventoryAll = [];
+      state.inventory = [];
+      els.inventoryTable.innerHTML = "";
+    }
+    updateAnalyzeBtn();
+  });
+
+  function populateModelSelect(models) {
+    els.modelSelect.innerHTML =
+      `<option value="ALL">Todos los modelos</option>` +
+      models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
+    els.modelSelect.disabled = false;
+  }
+
+  function applyModelFilter() {
+    state.modelFilter = els.modelSelect.value;
+    state.inventory = window.InventoryModule.filterByModel(
+      state.inventoryAll, state.modelFilter);
+    renderSimpleTable(
+      els.inventoryTable,
+      ["Modelo", "Chasis", "Motor", "Color"],
+      state.inventory.map(r => [r.modelo, r.chasis, r.motor, r.color]),
+      "No hay filas para el modelo seleccionado."
+    );
+    updateAnalyzeBtn();
+  }
+
+  els.modelSelect.addEventListener("change", applyModelFilter);
+
+  // ── PASO 2: FIT ──────────────────────────────────────────────────────────
+  els.fitInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setStatus(els.fitStatus, `Leyendo ${file.name}…`);
+    try {
+      state.fit = await window.InventoryModule.loadFitFile(file);
+      setStatus(els.fitStatus, `${state.fit.length} filas FIT cargadas.`, "ok");
+      renderSimpleTable(
+        els.fitTable,
+        ["Chasis", "Color esperado", "Modelo"],
+        state.fit.map(r => [r.chasis, r.color_esperado, r.modelo || "—"]),
+        "FIT vacía."
+      );
+    } catch (err) {
+      setStatus(els.fitStatus, `Error: ${err.message}`, "err");
+      state.fit = [];
+    }
+  });
+
+  // ── PASO 3: Facturas ─────────────────────────────────────────────────────
+  els.invoicesInput.addEventListener("change", (e) => {
+    state.invoices = Array.from(e.target.files || []);
+    els.invoicesList.innerHTML = state.invoices.map((f, i) =>
+      `<li><span class="fname">${esc(f.name)}</span>` +
+      `<span class="fstatus" data-i="${i}">pendiente</span></li>`
+    ).join("");
+    updateAnalyzeBtn();
+  });
+
+  function setFileStatus(i, text, cls) {
+    const el = els.invoicesList.querySelector(`[data-i="${i}"]`);
+    if (el) { el.textContent = text; el.className = `fstatus ${cls || ""}`; }
+  }
+
+  // ── PASO 4: Analizar ─────────────────────────────────────────────────────
   els.analyzeBtn.addEventListener("click", async () => {
     els.analyzeBtn.disabled = true;
     state.invoiceEntries = [];
-    setProgress(0, state.invoices.length, "Preparando OCR…");
+    $("step-report").hidden = true;
 
-    for (let i = 0; i < state.invoices.length; i++) {
-      const file = state.invoices[i];
-      setInvoiceStatus(i, "procesando…", "run");
-      setProgress(i, state.invoices.length, `Factura ${i + 1}/${state.invoices.length}: ${file.name}`);
+    const knownModels = state.modelFilter === "ALL"
+      ? window.InventoryModule.uniqueModels(state.inventoryAll)
+      : [state.modelFilter];
 
-      try {
-        const pages = await window.OcrModule.ocrPdf(file, (p) => {
-          setProgress(
-            i + (p.ratio || 0),
-            state.invoices.length,
-            `Factura ${i + 1}/${state.invoices.length}: ${file.name} · pág. ${p.pageIndex}/${p.pageCount} (${p.stage})`
-          );
-        });
-        const entries = window.ParserModule.extractTauroEntries(pages, file.name);
-        state.invoiceEntries.push(...entries);
-        setInvoiceStatus(i,
-          entries.length ? `${entries.length} Tauro detectado(s)` : "sin Tauros",
-          "done");
-      } catch (err) {
-        console.error(err);
-        setInvoiceStatus(i, `error: ${err.message}`, "err");
-      }
+    // Fase 1: OCR (el backend procesa cada PDF)
+    setProgress(10, "Enviando facturas al servidor para OCR…");
+    try {
+      const ocrResult = await window.API.ocr(
+        state.invoices, state.modelFilter, knownModels);
 
-      setProgress(i + 1, state.invoices.length,
-        `Factura ${i + 1}/${state.invoices.length} completada.`);
+      ocrResult.results.forEach((r, i) => {
+        if (r.error) {
+          setFileStatus(i, `error: ${r.error}`, "err");
+        } else {
+          const n = r.entries.length;
+          setFileStatus(i, n ? `${n} entrada(s)` : "sin entradas", "done");
+          state.invoiceEntries.push(...r.entries);
+        }
+      });
+    } catch (err) {
+      setProgress(0, `Error en OCR: ${err.message}`);
+      els.analyzeBtn.disabled = false;
+      return;
     }
 
-    setProgress(state.invoices.length, state.invoices.length, "Cruzando datos…");
+    // Fase 2: Análisis cruzado
+    setProgress(80, "Cruzando datos con inventario y FIT…");
+    try {
+      state.report = await window.API.analyze(
+        state.inventory,
+        state.invoiceEntries,
+        state.fit,
+        state.modelFilter
+      );
+    } catch (err) {
+      setProgress(80, `Error en análisis: ${err.message}`);
+      els.analyzeBtn.disabled = false;
+      return;
+    }
 
-    const invoiceNames = state.invoices.map(f => f.name);
-    state.report = window.AnalyzerModule.crossReference(
-      state.inventoryTauro,
-      state.invoiceEntries,
-      invoiceNames
-    );
+    setProgress(100, "Listo.");
     window.ReportModule.renderReport(state.report);
-
-    setProgress(state.invoices.length, state.invoices.length, "Listo.");
     els.analyzeBtn.disabled = false;
-
-    // Tesseract worker ya no se necesita mientras el usuario revisa el informe.
-    try { await window.OcrModule.terminateWorker(); } catch (_) {}
   });
 
-  // ---- Exportaciones ------------------------------------------------------
-
-  els.exportXlsxBtn.addEventListener("click", () => {
+  // ── Exportaciones ────────────────────────────────────────────────────────
+  els.exportXlsxBtn.addEventListener("click", async () => {
     if (!state.report) return;
-    window.ReportModule.exportXlsx(state.report);
+    try {
+      els.exportXlsxBtn.disabled = true;
+      await window.API.exportXlsx(state.report);
+    } catch (err) {
+      alert(`Error al exportar Excel: ${err.message}`);
+    } finally {
+      els.exportXlsxBtn.disabled = false;
+    }
   });
 
-  els.exportPdfBtn.addEventListener("click", () => {
+  els.exportPdfBtn.addEventListener("click", async () => {
     if (!state.report) return;
-    window.ReportModule.exportPdf(state.report);
+    try {
+      els.exportPdfBtn.disabled = true;
+      await window.API.exportPdf(state.report);
+    } catch (err) {
+      alert(`Error al exportar PDF: ${err.message}`);
+    } finally {
+      els.exportPdfBtn.disabled = false;
+    }
   });
 })();
